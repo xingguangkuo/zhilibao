@@ -1,0 +1,345 @@
+crm项目的架构
+   * 创建web工程
+   *  引入jar包
+       * mysql的驱动包
+       * hibernate需要的jar包
+       * spring需要的jar包
+       * struts2需要的jar包
+       * jstl 需要的jar包
+       * junit需要的jar包
+   
+   * 包的介绍
+       * cn.itcast.crm.container:重新封装spring容器
+       * cn.itcast.crm.dao:放置的是dao接口
+       * cn.itcast.crm.dao.impl:放置的是dao接口的实现类
+       * cn.itcast.crm.domain:放置的是po类、po类和数据库表关联的映射文件
+       * cn.itcast.crm.service:业务层的接口
+	   * cn.itcast.crm.service.impl:业务层的接口的实现类
+	   * cn.itcast.crm.web.action:struts2的action
+	   * cn.itcast.crm.web.form:封装页面数据的javaBean
+	   * junit:开发人员测试用的
+	   
+   * 搭建hibernate层
+	      * 定义需求:部门信息的页面数据要插入到数据库中
+	      * 定义表
+	          CREATE TABLE `sys_user_group` (
+				  `id` INTEGER(11) NOT NULL AUTO_INCREMENT,               #编号
+				  `remark` TEXT,                                          #备注
+				  `name` VARCHAR(100) DEFAULT NULL,                       #部门名称
+				  `principal` VARCHAR(50)  DEFAULT NULL,                  #部门负责人
+				  `incumbent` VARCHAR(200)  DEFAULT NULL,                 #部门职能
+				  PRIMARY KEY (`id`)
+				)
+				
+		  * 创建po对象,放置在cn.itcast.crm.domain包下
+		     public class SysUserGroup implements java.io.Serializable {
+				private Integer id;
+				private String remark; // 备注
+				private String name; // 部门名称
+				private String principal; // 部门负责人
+				private String incumbent; // 部门职能
+		     }
+		  
+		  * 创建表和po之间的映射文件SysUserGroup.hbm.xml 放置在cn.itcast.crm.domain包下
+		     * SysUserGroup.hbm.xml文件的内容直接看该文件即可
+		   
+		  * 创建hibernate.cfg.xml文件连接数据库,加载SysUserGroup.hbm.xml文件,放置src下
+			     <session-factory>
+					<property name="hibernate.connection.username">root</property>
+					<property name="hibernate.connection.password">root</property>
+					<property name="hibernate.connection.url">jdbc:mysql://localhost:3306/itcast0807crm</property>
+					<property name="hibernate.connection.driver_class">com.mysql.jdbc.Driver</property>
+					<property name="hibernate.connection.autocommit">true</property>
+					<property name="hibernate.dialect">org.hibernate.dialect.MySQL5Dialect</property>
+					<property name="hibernate.hbm2ddl.auto">update</property>
+					<property name="hibernate.show_sql">true</property>
+					<mapping resource="cn/itcast/crm/domain/SysUserGroup.hbm.xml"/>
+				</session-factory>
+		  
+		  * 测试.放置在junit包下 		
+			    public class TestHibernate {
+						@Test
+						public void testHibernateConf(){
+							Configuration config=new Configuration();
+							config.configure();
+							SessionFactory sf=config.buildSessionFactory();
+							Session s=sf.openSession();
+					        Transaction tx=s.beginTransaction();
+					        SysUserGroup sysUserGroup=new SysUserGroup();
+					        sysUserGroup.setName("销售部");
+					        sysUserGroup.setPrincipal("xxx");
+					        sysUserGroup.setIncumbent("ttt");
+					        s.save(sysUserGroup);
+					        tx.commit();
+					        s.close();
+						}
+				}
+
+  * 搭建spring和hibernate
+        * 创建beans.xml文件,放置在src下
+           * 引入命名空间 bean tx context aop
+                <?xml version="1.0" encoding="UTF-8"?>
+				<beans  xmlns="http://www.springframework.org/schema/beans"
+				        xmlns:context="http://www.springframework.org/schema/context"
+				        xmlns:aop="http://www.springframework.org/schema/aop"
+				        xmlns:tx="http://www.springframework.org/schema/tx"
+						xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+						xsi:schemaLocation="http://www.springframework.org/schema/beans 
+						                    http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+						                    http://www.springframework.org/schema/context 
+						                    http://www.springframework.org/schema/context/spring-context-2.5.xsd
+						                    http://www.springframework.org/schema/tx 
+						                    http://www.springframework.org/schema/tx/spring-tx-2.5.xsd
+						                    http://www.springframework.org/schema/aop 
+						                    http://www.springframework.org/schema/aop/spring-aop-2.5.xsd">    
+		   * 配置如下:
+			       <!-- 1 配置注解的自动扫描-->
+				   <context:component-scan base-package="cn.itcast.crm"/>
+				   
+				   <!--3 配置本地化代理工程bean,这是spring整合hibernate的入口 -->
+				   <bean id="sessionFactory" class="org.springframework.orm.hibernate3.LocalSessionFactoryBean">
+				     <property name="configLocation">
+				       <!--表示在类路径下加载hibernate.cfg.xml  -->
+				       <value>classpath:hibernate.cfg.xml</value>
+				     </property>
+				   </bean>
+				   
+				   <!--4 创建事务管理器 aop切面-->
+				   <bean id="txManager" class="org.springframework.orm.hibernate3.HibernateTransactionManager">
+				      <property name="sessionFactory" ref="sessionFactory"/>
+				   </bean>
+				  
+				   <!--5 配置处理事务的注解-->
+				   <tx:annotation-driven transaction-manager="txManager"/>
+	   
+		   * 创建dao层共同的接口,放置在cn.itcast.crm.dao下
+			       public interface ICommonDao<T> {
+					  public void save(T entity);	
+				   }
+		   * 创建dao层共同的接口的实现类,,放置在cn.itcast.crm.dao.impl下
+				   public class CommonDaoImpl<T> extends HibernateDaoSupport implements ICommonDao<T> {
+						public void save(T entity) {
+							this.getHibernateTemplate().save(entity);
+						}
+						
+						@Resource(name="sessionFactory") //注入sessionFactory
+						public  void setSessionFactoryDI(SessionFactory sessionFactory) {
+							System.out.println("sessionFactory  "+sessionFactory);
+						    //调用父类的setSessionFactory方法,注入sessionFactory
+							super.setSessionFactory(sessionFactory);
+						}
+				   }   
+		   
+		   * 创建部门的dao接口 SysUserGroupDao接口		放在cn.itcast.crm.dao包下
+		            public interface ISysUserGroupDao extends ICommonDao<SysUserGroup> {
+						public final static String  SERVICE_NAME="cn.itcast.crm.dao.impl.SysUserGroupDaoImpl";
+					}
+		
+		   * 创建部门的dao接口的实现类  放在cn.itcast.crm.dao.impl包下
+		           @Repository(ISysUserGroupDao.SERVICE_NAME)
+					public class SysUserGroupDaoImpl extends CommonDaoImpl<SysUserGroup> implements ISysUserGroupDao {
+					
+					}
+					
+		   * 测试,放置在junit包下
+		      public class TestSysUserGroupDao {
+					@Test
+					public void testSave() {
+						ApplicationContext ctx = new ClassPathXmlApplicationContext("beans.xml");
+						ISysUserGroupDao sysUserGroupDao = (ISysUserGroupDao) ctx.getBean(ISysUserGroupDao.SERVICE_NAME);
+						
+						SysUserGroup sysUserGroup = new SysUserGroup();
+						sysUserGroup.setName("销售部");
+						sysUserGroup.setPrincipal("xxx");
+						sysUserGroup.setIncumbent("ttt");
+						
+						sysUserGroupDao.save(sysUserGroup);
+					}
+				}
+				
+				
+		  * 创建部门的业务层接口	,放置在cn.itcast.crm.service包下
+			    public interface ISysUserGroupService {
+					public final static String  SERVICE_NAME="cn.itcast.crm.service.impl.SysUserGroupServiceImpl";
+					public void saveSysUserGroup(SysUserGroup sysUserGroup);
+				}
+			
+		  * 创建部门的业务层接口实现类,放置在cn.itcast.crm.service.impl包下	
+		    	@Transactional(readOnly=true)
+				@Service(ISysUserGroupService.SERVICE_NAME)
+				public class SysUserGroupServiceImpl implements ISysUserGroupService {
+				
+					@Resource(name=ISysUserGroupDao.SERVICE_NAME)
+					private ISysUserGroupDao sysUserGroupDao;
+				 	
+					@Transactional(isolation=Isolation.DEFAULT,propagation=Propagation.REQUIRED,readOnly=false)
+					public void saveSysUserGroup(SysUserGroup sysUserGroup) {
+						sysUserGroupDao.save(sysUserGroup);
+					}
+				}	
+				
+		   * 测试
+		      public class TestSysUserGroupService {
+					@Test
+					public void testSavex() {
+						ApplicationContext ctx = new ClassPathXmlApplicationContext("beans.xml");
+						ISysUserGroupService sysUserGroupService = (ISysUserGroupService) ctx.getBean(ISysUserGroupService.SERVICE_NAME);
+						
+						SysUserGroup sysUserGroup = new SysUserGroup();
+						sysUserGroup.setName("销售部");
+						sysUserGroup.setPrincipal("xxx");
+						sysUserGroup.setIncumbent("ttt");
+						sysUserGroupService.saveSysUserGroup(sysUserGroup);
+					}	
+				}
+						
+	* 搭建struts2(保存部门信息)
+	     * jsp页面(sys/group/add.jsp)
+	     * 请求的路径/sys/sysUserGroupAction_save.do
+	     * 根据路径创建SysUserGroupAction和在action中增加save方法，放置在cn.itcast.crm.web.action包下
+				public class SysUserGroupAction extends ActionSupport
+				
+					public String save() throws IllegalAccessException, InvocationTargetException{
+						System.out.println("xxxxxxxxxxxxxxxxxxxxxxxx ");
+						return null;
+					}
+				}
+				
+		  * 建立请求路径和action之间的关联
+		     * 创建struts.xml文件,放置在src下
+		     * 文件内容如下:
+		        <?xml version="1.0" encoding="UTF-8"?>
+				<!DOCTYPE struts PUBLIC
+					"-//Apache Software Foundation//DTD Struts Configuration 2.1.7//EN"
+					"http://struts.apache.org/dtds/struts-2.1.7.dtd">
+				<struts>	
+				   <!-- 配置请求后缀名.do -->
+				   <constant name="struts.action.extension" value="do"/>
+				   
+				   <!-- 配置主题为简单主题 -->
+				   <constant name="struts.ui.theme" value="simple"/>
+				   
+				   <!--配置struts2的模式为开发模式-->
+				   <constant name="struts.devMode" value="true"/>
+				   
+				   <package name="sys" namespace="/sys" extends="struts-default">
+				      <action name="sysUserGroupAction_*" class="cn.itcast.crm.web.action.SysUserGroupAction" method="{1}">
+				         <result name="add">/sys/group/add.jsp</result>      
+				      </action>
+				   </package>
+				</struts> 
+		  
+		  * 在web.xml文件配置struts2的过滤器
+				<filter>
+					<filter-name>StrutsPrepareAndExecuteFilter</filter-name>
+					<filter-class>org.apache.struts2.dispatcher.ng.filter.StrutsPrepareAndExecuteFilter</filter-class>
+				</filter>
+				<filter-mapping>
+					<filter-name>StrutsPrepareAndExecuteFilter</filter-name>
+					<url-pattern>/*</url-pattern>
+				</filter-mapping>
+		
+		  * 测试
+		  
+		  *  定义javaBean(vo对象)接收表单数据,放置在cn.itcast.crm.web.form包下
+		      public class SysUserGroupForm implements java.io.Serializable {
+				private String id;
+				private String name;
+				private String principal;
+				private String incumbent;
+				private String remark;
+			  }
+		  
+		  * action要实现模型驱动接口	  
+		       public class SysUserGroupAction extends ActionSupport implements ModelDriven<SysUserGroupForm>{
+				   private SysUserGroupForm sysUserGroupForm=new SysUserGroupForm();
+					public String save() throws IllegalAccessException, InvocationTargetException{
+						System.out.println("xxxxxxxxxxxxxxxxxxxxxxxx ");
+						return null;
+					}
+					
+						public SysUserGroupForm getModel() {
+						return sysUserGroupForm;
+					}
+				}
+		  		
+		  * 测试，SysUserGroupForm是否接收到值
+		  
+		  * 如何在struts2的SysUserGroupAction中的save方法中,获取spring容器中bean节点的对象
+		     * 创建ServiceProvinderCore,加载beans.xml文件,放置在cn.itcast.crm.container包下
+			       public class ServiceProvinderCore {
+						protected ApplicationContext ctx;
+						
+						/**
+						 * @param filename  beans.xml
+						 */
+						public void load(String filename){
+							ctx=new ClassPathXmlApplicationContext(filename);
+						}
+					}
+			 * 创建ServiceProvinder类,获取获取spring容器中bean节点的对象,放置在cn.itcast.crm.container包下
+			      public class ServiceProvinder {
+						private static ServiceProvinderCore sc;
+						
+						static{
+							System.err.println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+							sc=new ServiceProvinderCore();
+							sc.load("beans.xml");
+						}
+						
+						public static Object getService(String beanName){
+							System.err.println("ppppppppppppppppppppppp");
+							if(StringUtils.isBlank(beanName)){
+								throw new RuntimeException("您要访问的服务名称不能为空");
+							}
+							Object bean=null;
+							//如果spring容器中包含beanName
+							if(sc.ctx.containsBean(beanName)){
+								bean=sc.ctx.getBean(beanName);
+							}
+							
+							//如果spring容器中不包含beanName
+							if(bean==null){
+								throw new RuntimeException("您要访问的服务名称["+beanName+"]不存在");
+							}
+							
+							return bean;
+						}
+					}
+			 
+		   * 测试	 
+			    @Test
+				public void testSave() {
+					
+					ISysUserGroupService sysUserGroupService=(ISysUserGroupService)ServiceProvinder.getService(ISysUserGroupService.SERVICE_NAME);
+					
+					SysUserGroup sysUserGroup = new SysUserGroup();
+					sysUserGroup.setName("销售部");
+					sysUserGroup.setPrincipal("xxx");
+					sysUserGroup.setIncumbent("ttt");
+					
+					sysUserGroupService.saveSysUserGroup(sysUserGroup);
+				}  		
+				
+		   * 在 SysUserGroupAction中的save方法中增加如下代码
+		  		public String save() throws IllegalAccessException, InvocationTargetException{
+						System.out.println("sysUserGroupForm.getName()  "+sysUserGroupForm.getName());
+						
+						//实例化po对象
+						SysUserGroup sysUserGroup=new SysUserGroup();
+						
+						//赋值vo对象的值到po中
+						BeanUtils.copyProperties(sysUserGroup, sysUserGroupForm);
+						
+						//获取业务层的对象(本项目struts2和spring是分离的)
+						ISysUserGroupService sysUserGroupService=
+							   (ISysUserGroupService)ServiceProvinder.getService(ISysUserGroupService.SERVICE_NAME);
+						
+						//调用业务层保存po对象
+						sysUserGroupService.saveSysUserGroup(sysUserGroup);
+						
+						return null;
+					}
+			* 测试:		
+   		   
+				   
