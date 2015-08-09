@@ -21,5 +21,6 @@ public class BaseAction extends ActionSupport  implements ServletRequestAware,Se
 	public void setServletResponse(HttpServletResponse response) {
 		this.response=response;
 	}
+	//test
 
 }
